@@ -1,17 +1,17 @@
 # Analysis of scRNAseq data from patients with T1D and healthy donors
- This repository contains an analysis of the single-cell RNA sequencing of PBMC samples from healthy donors and donors with Type 1 Diabetes Mellitus (T1D). The results will be published in:
+![Summary of the paper](./pics/dia_workflow.jpg) 
 
-<b><i>An imbalance of naïve and effector T-cell phenotypes in early type 1 diabetes across conventional and regulatory subsets </b></i>
-<p>Veronika Niederlova<sup>1,2</sup>, Ales Neuwirth<sup>1</sup>, Vit Neuman<sup>3</sup>, Juraj Michalik<sup>1</sup>, Bela Charvatova<sup>1</sup>, Martin Modrak<sup>4</sup>, Zdenek Sumnik<sup>3</sup>, Ondrej Stepanek<sup>1</sup>
+This repository contains an analysis of the single-cell RNA sequencing of PBMC samples from healthy donors and donors with Type 1 Diabetes Mellitus (T1D). The results will be published in:
 
-<sup>1</sup> Laboratory of Adaptive Immunity, Institute of Molecular Genetics of the Czech Academy of Sciences, Prague, Czechia<br/>
-<sup>2</sup> Department of Cell Biology, Faculty of Science, Charles University in Prague, Czechia<br/>
-<sup>3</sup> Department of Pediatrics, 2nd Faculty of Medicine, Charles University in Prague & Motol University Hospital, Prague, Czechia<br/>
-<sup>4</sup> Department of Bioinformatics, Second Faculty of Medicine, Charles University, Prague, Czechia<br/>
-</sup>
+><b><i>An imbalance of naïve and effector T-cell phenotypes in early type 1 diabetes across conventional and regulatory subsets </b></i>
+><p>Veronika Niederlova<sup>1,2</sup>, Ales Neuwirth<sup>1</sup>, Vit Neuman<sup>3</sup>, Juraj Michalik<sup>1</sup>, Bela Charvatova<sup>1</sup>, Martin Modrak<sup>4</sup>, Zdenek Sumnik<sup>3</sup>, Ondrej Stepanek<sup>1</sup>
+>
+><sup>1</sup> Laboratory of Adaptive Immunity, Institute of Molecular Genetics of the Czech Academy of Sciences, Prague, Czechia  
+><sup>2</sup> Department of Cell Biology, Faculty of Science, Charles University in Prague, Czechia  
+><sup>3</sup> Department of Pediatrics, 2nd Faculty of Medicine, Charles University in Prague & Motol University Hospital, Prague, Czechia  
+><sup>4</sup> Department of Bioinformatics, Second Faculty of Medicine, Charles University, Prague, Czechia  
+></sup>
 <br/>
-
-![Summary of the paper](./pics/dia_workflow.jpg)
 
 The functions and libraries needed for running the analysis are specified in the following file:
 * diabetes_analysis_v07.R
