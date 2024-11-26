@@ -1,23 +1,23 @@
 # Analysis of scRNAseq data from patients with T1D and healthy donors
  This repository contains an analysis of the single-cell RNA sequencing of PBMC samples from healthy donors and donors with Type 1 Diabetes Mellitus (T1D). The results will be published in:
 
-An imbalance of naïve and effector T-cell phenotypes in early type 1 diabetes across conventional and regulatory subsets 
+<b><i>An imbalance of naïve and effector T-cell phenotypes in early type 1 diabetes across conventional and regulatory subsets </b></i>
+<p>Veronika Niederlova<sup>1,2</sup>, Ales Neuwirth<sup>1</sup>, Vit Neuman<sup>3</sup>, Juraj Michalik<sup>1</sup>, Bela Charvatova<sup>1</sup>, Martin Modrak<sup>4</sup>, Zdenek Sumnik<sup>3</sup>, Ondrej Stepanek<sup>1</sup>
 
-Veronika Niederlova<sup>1,2</sup>, Ales Neuwirth1, Vit Neuman3, Juraj Michalik1, Bela Charvatova1, Martin Modrak4, Zdenek Sumnik3, Ondrej Stepanek1
+<sup>1</sup> Laboratory of Adaptive Immunity, Institute of Molecular Genetics of the Czech Academy of Sciences, Prague, Czechia<br/>
+<sup>2</sup> Department of Cell Biology, Faculty of Science, Charles University in Prague, Czechia<br/>
+<sup>3</sup> Department of Pediatrics, 2nd Faculty of Medicine, Charles University in Prague & Motol University Hospital, Prague, Czechia<br/>
+<sup>4</sup> Department of Bioinformatics, Second Faculty of Medicine, Charles University, Prague, Czechia<br/>
+</sup>
+<br/>
 
-1 Laboratory of Adaptive Immunity, Institute of Molecular Genetics of the Czech Academy of Sciences, Prague, Czechia
-
-2 Department of Cell Biology, Faculty of Science, Charles University in Prague, Czechia
-
-3 Department of Pediatrics, 2nd Faculty of Medicine, Charles University in Prague & Motol University Hospital, Prague, Czechia
-
-4 Department of Bioinformatics, Second Faculty of Medicine, Charles University, Prague, Czechia
-
+![Summary of the paper](./pics/dia_workflow.jpg)
 
 The functions and libraries needed for running the analysis are specified in the following file:
 * diabetes_analysis_v07.R
-  
-This analysis itself contains 23 parts:
+
+
+The analysis contains 23 parts:
 * 01_Cohort_characterization.ipynb
 * 02_CD8_v06_part1_annotation.ipynb
 * 03_CD4_v06_part1_annotation.ipynb
@@ -41,6 +41,8 @@ This analysis itself contains 23 parts:
 * 21_Other_data_Validation.ipynb
 * 22_BTN3A2_expression.ipynb
 * 23_Treg_Validaton.ipynb
+
+
 
 Processed data required to generate figures for the manuscript are available on Zenodo: 
 
