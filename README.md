@@ -6,9 +6,13 @@ An imbalance of naïve and effector T-cell phenotypes in early type 1 diabetes a
 Veronika Niederlova1,2, Ales Neuwirth1, Vit Neuman3, Juraj Michalik1, Bela Charvatova1, Martin Modrak4, Zdenek Sumnik3, Ondrej Stepanek1
 
 1 Laboratory of Adaptive Immunity, Institute of Molecular Genetics of the Czech Academy of Sciences, Prague, Czechia
+
 2 Department of Cell Biology, Faculty of Science, Charles University in Prague, Czechia
+
 3 Department of Pediatrics, 2nd Faculty of Medicine, Charles University in Prague & Motol University Hospital, Prague, Czechia
+
 4 Department of Bioinformatics, Second Faculty of Medicine, Charles University, Prague, Czechia
+
 
 The functions and libraries needed for running the analysis are specified in the following file:
 * diabetes_analysis_v07.R
