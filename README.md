@@ -13,9 +13,15 @@ This repository contains an analysis of the single-cell RNA sequencing of PBMC s
 ></sup>
 <br/>
 
+
+## Requirements
+Running the code requires R version 4.2.1 and higher. Specific package versions might be necessary. For more instructions, please take a look at the SessionInfo included in each analysis file. 
+
 The functions and libraries needed for running the analysis are specified in the following file:
 * diabetes_analysis_v07.R
 
+## Instructions
+For running the code, please clone the repository and download the preprocessed data deposited on Zenodo: [DOI: 10.5281/zenodo.14222418](https://zenodo.org/records/14222418). After the download completes, data files should be placed in the folder `data` of the cloned repository following the structure specified on Zenodo, i.e. initial files should be placed in the `init` and processed files should be placed in the `processed` folder.
 
 The analysis contains 23 parts:
 * 01_Cohort_characterization.ipynb
@@ -42,7 +48,9 @@ The analysis contains 23 parts:
 * 22_BTN3A2_expression.ipynb
 * 23_Treg_Validaton.ipynb
 
+Each file guides you through the analysis as it was performed. Please note that only some of the results presented in these notebooks were included in the manuscript. 
 
-
+## Data availability
 Processed data required to generate figures for the manuscript are available on Zenodo: 
 [DOI: 10.5281/zenodo.14222418](https://zenodo.org/records/14222418) 
+Raw data were not deposited to protect the identity of study participants.
