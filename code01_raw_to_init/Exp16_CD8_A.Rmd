@@ -1,0 +1,198 @@
+---
+title: "Experiment 11 Well 1"
+author: "Juraj Michalik"
+date: "12/3/2021"
+output: rmdformats::material
+---
+
+This document contains the analysis of human blood from scRNAseq - Experiment 16 Well 1 of CD8 T cells. Human Diabetes project.
+
+# Initialization 
+
+Load all necessary packages here.
+
+```{r libs, include=FALSE}
+knitr::opts_chunk$set(include = TRUE, warning = FALSE, message = FALSE, error = TRUE, cache = TRUE)
+#library(Seurat, lib.loc = '/usr/lib64/R/library')
+library(Seurat)
+library(future)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(cowplot)
+library(gridExtra)
+library(dbscan)
+library(scatterpie)
+library(reshape2)
+library(ggrepel)
+library(scds)
+library(SingleCellExperiment)
+
+source('VDJ_utilities.R')
+source('VDJ_Mixcr_import.R')
+
+# negation of %in% 
+`%nin%` = Negate(`%in%`)
+```
+
+Load matrix.
+
+```{r}
+gex <- Read10X('../data/raw/GEX/exp16_CD8_A/raw_feature_bc_matrix/')
+vdj <- build.VDJ.table('../data/raw/VDJ_GEX_data/E16_CD8_A_GEX_TRA.csv', 
+                       '../data/raw/VDJ_GEX_data/E16_CD8_A_GEX_TRB.csv',
+                       '../data/raw/VDJ/exp16_CD8_A_VDJ/all_contig_annotations.csv')
+vdj <- correct.mixcr.mismatches(vdj)
+
+# ID of experiment
+experiment.ID <- 'exp16'
+sample.ID <- 'CD8_A'
+sep01 <- paste(experiment.ID, sample.ID, sep='_')
+
+hashtags <- c()
+hash.list <- list()
+
+for(x in 1:9){
+  hashtags = c(hashtags, paste0('H', x))
+}
+
+print(hash.list)
+
+for(i in 1:length(hashtags)){
+  hash.read <- read.csv(paste0('Hashtags_exp16_CD8_A/', sep01, '_',
+                               hashtags[i], '.csv'), header = F)
+  hash.list[[i]] <- paste(hash.read[,1], '1', sep = '-')
+  
+}
+```
+
+We also need to load meta data.
+
+```{r}
+# also remove all columns with only NA
+meta.data.import <- read.csv('../data/Metadata.csv') %>% dplyr::filter(Well_CT_ID == 'exp16_CD8_A') %>% select_if(~ !all(is.na(.) | . == '')) %>% 
+  mutate(hashtags = Hashtag, Age = gsub(',','.', Age) %>% as.numeric(.), Patient_ID = Mouse_ID) %>% dplyr::select(-Mouse_ID)
+```
+
+Create Seurat object, then subset on cells for which we found correct hashtag combination, then add meta data descriptors.
+
+```{r}
+exp16_CD8_A <- CreateSeuratObject(gex$`Gene Expression`, 'exp16_CD8_A', min.cells = 3, min.features = 200)
+```
+
+Now compute MT and RP gene proportion for each cell and remove the genes afterwards along with VDJ genes as well. Then we reconstruct the object and we add antibodies as well.
+
+```{r}
+exp16_CD8_A[["percent.mt"]] <- PercentageFeatureSet(object = exp16_CD8_A, pattern = "^MT-")
+exp16_CD8_A[["percent.rp"]] <- PercentageFeatureSet(object = exp16_CD8_A, pattern = "^RP[S|L]")
+
+meta.table <- exp16_CD8_A@meta.data
+
+genes.removed <- GetAssayData(exp16_CD8_A, assay = 'RNA', slot = 'counts')
+genes.removed <- genes.removed[!grepl('^TR(A|B)(V|D|J)', rownames(genes.removed)),]
+genes.removed <- genes.removed[!grepl('^MT-', rownames(genes.removed)),]
+genes.removed <- genes.removed[!grepl('^RP(L|S)', rownames(genes.removed)),]
+
+exp16_CD8_A <- CreateSeuratObject(genes.removed, 'exp16_CD8_A', min.cells = 3, min.features = 200)
+exp16_CD8_A <- AddMetaData(exp16_CD8_A, meta.table)
+ab_frame <- gex$`Antibody Capture`[,colnames(gex$`Antibody Capture`) %in% colnames(exp16_CD8_A)]
+exp16_CD8_A[['Antibodies']] <-  CreateAssayObject(counts = ab_frame)
+```
+
+Now we add hashtag descriptors and meta data.
+
+```{r}
+# annotate by hashtags
+exp16_CD8_A <- subset(exp16_CD8_A, cells = colnames(exp16_CD8_A)[colnames(exp16_CD8_A) %in% unlist(hash.list)])
+
+exp16_CD8_A$hashtags <- ''
+for(i in 1:length(hashtags)){
+  exp16_CD8_A$hashtags[colnames(exp16_CD8_A) %in% hash.list[[i]]] <- hashtags[i]
+}
+
+exp16_CD8_A.meta <- exp16_CD8_A@meta.data %>%
+  left_join(meta.data.import, by =  c('hashtags' = 'hashtags'))
+rownames(exp16_CD8_A.meta) <- colnames(exp16_CD8_A)
+exp16_CD8_A@meta.data <- exp16_CD8_A.meta
+```
+
+Plot QC elements - notably gene count, read count etc.:
+
+```{r}
+print(VlnPlot(exp16_CD8_A, features = c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent.rp"), ncol = 4, pt.size = 0))
+```
+
+We track down VDJ doublets and remove them. For now we won't remove cells with too many counts and hashtag doublets, neither by mitochondrial gene counts.
+
+```{r}
+vdj.doublets <- trace.VDJ.duplicates(exp16_CD8_A, vdj)
+exp16_CD8_A <- subset(exp16_CD8_A, cells = colnames(exp16_CD8_A)[!(colnames(exp16_CD8_A) %in% vdj.doublets)])
+exp16_CD8_A <- create.VDJ.metadata(exp16_CD8_A, vdj)
+exp16_CD8_A$has.VDJ <- ifelse(!is.na(exp16_CD8_A$cdr3_A1) | !is.na(exp16_CD8_A$cdr3_B), 'VDJ found', 'VDJ not found')
+exp16_CD8_A$has.complete.VDJ <- ifelse(!is.na(exp16_CD8_A$cdr3_A1) & !is.na(exp16_CD8_A$cdr3_B), 'Complete VDJ found', 'Complete VDJ not found')
+```
+
+```{r}
+dir.create('Whitelists/', showWarnings = FALSE)
+write.table(gsub('-1', '', colnames(exp16_CD8_A)), 'Whitelists/exp16_CD8_A_whitelist.csv', quote = F, row.names = F, col.names = F)
+```
+
+Add PTPRC data.
+
+```{r}
+exp16_CD8_A_ptrpc <- readRDS('../data/raw/Ptprc/exp16_CD8_A_ptprc.rds')
+exp16_CD8_A[['PTPRC']] <- CreateAssayObject(exp16_CD8_A_ptrpc)
+```
+
+# First Analysis
+
+Prepare first crude (or rude) analysis.
+
+```{r}
+exp16_CD8_A <- NormalizeData(object = exp16_CD8_A )
+exp16_CD8_A <- FindVariableFeatures(exp16_CD8_A, selection.method = "vst", nfeatures = 1000,
+                                    verbose = FALSE)
+  
+exp16_CD8_A <- ScaleData(exp16_CD8_A, verbose = FALSE)
+exp16_CD8_A <- RunPCA(exp16_CD8_A, npcs = 20, verbose = FALSE)
+exp16_CD8_A <- RunUMAP(exp16_CD8_A, reduction = "pca", dims = 1:20)
+  
+exp16_CD8_A <- FindNeighbors(exp16_CD8_A, dims = 1:20)
+exp16_CD8_A <- FindClusters(exp16_CD8_A, resolution = 0.5)
+```
+
+Print results.
+
+```{r,  results = F, message=FALSE, fig.width = 8}
+DimPlot(exp16_CD8_A, label = T) + ggtitle('Exp. 16 CD8 A - HS diabetes project CD8 T cells')
+VlnPlot(exp16_CD8_A, features = c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent.rp"), ncol = 4, pt.size = 0)
+```
+
+Print distribution by disease.
+
+```{r,  results = F, message=FALSE, fig.width = 8}
+DimPlot(exp16_CD8_A, group.by = 'Patient_ID') + ggtitle('Exp. 16 CD8 A - HS diabetes project CD8 T cells - Patient ID')
+DimPlot(exp16_CD8_A, group.by = 'Condition') + ggtitle('Exp. 16 CD8 - Well A - HS diabetes project CD8 T cells - Condition')
+```
+
+Add clones.
+
+```{r}
+exp16_CD8_A <- create.clones(exp16_CD8_A)
+```
+
+Normalize antibody counts.
+
+```{r}
+exp16_CD8_A <- NormalizeData(exp16_CD8_A, normalization.method = "CLR", margin = 2, assay = "Antibodies")
+```
+
+Save initial data set.
+
+```{r,  results = F, message=FALSE}
+saveRDS(exp16_CD8_A, '../data/init/exp16_CD8_A_init_with_Mixcr.rds')
+```
+
+```{r}
+exp16_CD8_A@meta.data[c('Patient_ID', 'Condition')] %>% table
+```

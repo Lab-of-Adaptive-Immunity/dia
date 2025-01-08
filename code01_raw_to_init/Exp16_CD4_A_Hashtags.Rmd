@@ -1,0 +1,246 @@
+---
+title: "Hahtag analysis exp11 W1"
+author: "Juraj Michalik and Veronika Niederlova"
+date: "11/22/2019"
+output: html_document
+---
+
+## 1. Module of single cell RNA seq pipeline - Strain Separation
+
+This is the module of single cell RNA seq pipeline that separates the strains from the sample if stated sample contains the reads from more than one. The following modules treat each sample separately. 
+
+The input and output of this module are as follows:
+
+* **Input**:
+  + **raw feature matrix**: Contains counts for cellular gene expression for ***single sample and multiple strains*** as well as feature barcoding information that allows to separate both strains. If you have only single strain in sample, you can start directly with module 2. See *Configuration* section to specify the paths  strain. These lists will be stored as **.csv** files. The lists are then fed to the algorithm that extracts reads with corresponding barcodes, and maps them on reference to obtain **raw feature matrices** for each strain separately.
+
+## Prerequisites
+You must have input data in your possession: you must have performed mappings and quantification of split experiments containing multiple strains as well as their barcoding. You need at the very least Gene Expression and VDJ data. 
+
+This module requires following libraries, which should be installed:
+
+```{r packages}
+suppressMessages(require(Seurat))
+suppressMessages(require(ggplot2))
+suppressMessages(require(cowplot))
+suppressMessages(require(data.table))
+suppressMessages(require(pracma))
+suppressMessages(require(dplyr))
+suppressMessages(require(RColorBrewer))
+suppressMessages(require(grDevices))
+suppressMessages(require(gplots))
+suppressMessages(require(kableExtra))
+suppressMessages(require(knitr))
+```
+
+The following functions are also needed. Don't worry, the will be loaded here, so you're safe if you have all the required packages. Their description:
+
+* **get.auto.minimum** - gets automatically minimum for marker **marker.val** from assay **antibody.assay**. The function makes three assumptions about the histogram of antibody counts **histogram.vector**:
+  + there are exactly two local maxima (one for cells not having the marker, one for cells having it);
+  + one of those local maxima is at counts for 0 antibodies (cells not having the marker);
+  + the local minimum we search is between them.
+  
+  Note that the first hypothesis is false, as usually the histogram will be rugged, however we can somewhat fix it by smoothing it first. This is done by using sliding window averaging *n* consecutive values on this window. On resulting graph we perform the simple gradient walk from counts at 0. The value where the gradient walk stops is our limit offsetted by half of the window. We also take values that are one point before the sliding window minimum.
+
+```{r functions}
+get.auto.minimum <- function(histogram.vector, n.smooth=5){
+  # smoothing
+  smooth.hist <- stats::filter(histogram.vector, rep(1/n.smooth, n.smooth))
+  smooth.hist <- smooth.hist[!is.na(smooth.hist)]
+  # gradient walk
+  i = 1
+  gr.walk.val <- smooth.hist[i]
+  while(gr.walk.val > smooth.hist[i+1] && i<length(smooth.hist)){
+    gr.walk.val <- smooth.hist[i+1]
+    i = i + 1
+  }
+  return(i-1+ceiling(n.smooth/2)) # also count in the cells just before the minimum (-1)
+}
+```
+
+## Configuration
+
+This part defines the configuration variables of entire module. As it is, **it should be necessary to modify only this section of the file to adjust it for new experiment**.
+
+This experiment is defined by an unique identifier that is described as follows:
+
+* 1<sup>st</sup> part of identfier, **experiment.ID**, defines the experiment;
+* 2<sup>nd</sup> part of identifier, **sample.ID**,  designs the sample;
+
+In this experiment, the identifier is defined as follows:
+
+```{r identifier}
+experiment.ID <- 'exp16'
+sample.ID <- 'CD4_A'
+sep01 <- paste(experiment.ID, sample.ID, sep='_')
+```
+
+This module also requires the precision of following parameters. The description of the parameters is as follows:
+
+* **Files:**
+  + **raw.matrix.path** - path to **raw matrix** of the experiment defined by the ID above, *must contain feature barcoding*;
+* **Pre-filtering:**
+  + **min.GE** - minimum molecules of GE per cell to keep given cell; 
+* **Strains: **
+  + **sample.strains** - list of strains present in analyzed sample.
+  + **strain.markers** - name of strain markers, identical to those contained in raw matrix and **in the same order as strains in strain.markers** (ie. first value in *strain.markers* is the marker for first strain in *sample strains*);
+* **Splitting:**
+  + **split.auto:** - attempts to automatically estimate the values in **cutoff.lim** from local minima in ordered histogram of counts and determine treshold. FALSE for disabled, TRUE for enabled. 
+  + **cutoff.values:** - limits for markers by which cells will be split in groups. Ignored if *split.auto* is set to TRUE, otherwise it is required.
+  + **hash.prop.lim:** - minimum proportion of hashtag for a cell to be considered a double if two limits are higher than cutoff values.
+ 
+```{r parameters}
+raw.matrix.path <- '../data/raw/GEX/exp16_CD4_A/raw_feature_bc_matrix/'
+target.path <- 'Hashtags_exp16_CD4_A/'
+min.GE <- 200
+hash.prop.lim <- 0.1
+sample.strains <- c('H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7', 'H8', 'H9')
+strain.markers <- c('H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7', 'H8', 'H9')
+split.auto <- TRUE
+cutoff.values <- c()
+```
+
+## Summary - Set Variables
+
+```{r param summary, echo=FALSE}
+sample.strains.txt <- paste(sample.strains, collapse= ", ")
+strain.markers.txt <- paste(strain.markers, collapse= ", ")
+cutoff.values.txt <- paste(cutoff.values, collapse= ", ")
+
+sum.up <- rbind(raw.matrix.path,
+min.GE,
+hash.prop.lim,
+sample.strains.txt,
+strain.markers.txt,
+split.auto,
+cutoff.values.txt)
+
+rownames(sum.up) <- gsub('.txt', '',  rownames(sum.up))
+kable(sum.up, "html", escape = FALSE) %>%
+kable_styling(bootstrap_options = c("hover", "condensed")) 
+```
+
+## Generate target directory
+
+```{r}
+dir.create(target.path, showWarnings = FALSE)
+```
+
+## Preparing data for extraction
+
+We load data into sparse matrix object using Seurat. We then remove all rows (= cells) that do not have at least one molecule of strain marker, and at least **min.GE** reads. 
+
+```{r load, message=FALSE}
+GE.dat <- Read10X(data.dir = raw.matrix.path)
+antibodies <- GE.dat$`Antibody Capture`
+
+# remove anything not having at least min.GE reads
+filtered.cells <- colnames(GE.dat$`Gene Expression`[,Matrix::colSums(GE.dat$`Gene Expression`)>min.GE])
+antibodies <- antibodies[,colnames(antibodies) %in% filtered.cells]
+
+# remove anything that does not have at least 1 marker molecule
+antibodies <- antibodies[,apply(antibodies[strain.markers,],2,sum)>0]
+```
+
+First we plot the distribution of markers. We display separation between markers by all possible pairs.
+
+**WARNING: This produces exponential number of figures depending on the number of markers. If there is too many markers the number of pictures will too large. Please keep the number of markers reasonable. **
+
+```{r plot markers, echo=FALSE, fig.align = "center"}
+marker.combin = combn(strain.markers, 2)
+for(i  in 1:dim(marker.combin)[2]){
+  plot(antibodies[marker.combin[1,i],], antibodies[marker.combin[2,i],], main = paste0(marker.combin[1,i], ' vs. ', marker.combin[2,i], ' for experiment ', sep01), xlab = marker.combin[1,i], ylab = marker.combin[2,i], pch = 4, col = 'purple', cex = 0.7)
+}
+```
+
+Since such picture may be a bit hard to parse, we also show histograms for each marker, allowing us to (hopefully) identify the separations between the markers.
+
+```{r plot markers histograms, echo=FALSE, fig.align = "center"}
+for(i in strain.markers){
+   hist(antibodies[i,], col = 'purple', xlab = i, main = paste("Frequencies of ", i), breaks = max(antibodies[i,]), xlim = c(0,150))
+}
+  
+```  
+
+Now you can either manually set **cutoff.values** and split data based on them (recommended for more complicated sets), or use a function of automatic estimation for cutoff by the function **get.auto.minimum** (if **split.auto** is TRUE). If automatic estimation is turned off, you need to provide values yourself.
+
+We also raised smoothing parameter to 100 (window size) because it seems to work better, most likely due to bigger number of hashtag molecules available.
+
+```{r autodetect mins}
+if(split.auto){
+  n.smooth = 30
+  cutoff.values <- rep(0, length(cutoff.values))
+  for(i in 1:length(strain.markers)){
+    if( max(antibodies[strain.markers[i],])>0){
+      hist.data <- hist(antibodies[strain.markers[i],], breaks = max(antibodies[strain.markers[i],]), plot=FALSE)
+      marker.counts <- hist.data$counts
+      if(length(marker.counts) > n.smooth){
+          cutoff.values[i] <- get.auto.minimum(marker.counts, n.smooth)
+      }else{
+          cutoff.values[i] <- get.auto.minimum(marker.counts, n.smooth = length(marker.counts))
+      }
+    }else{
+       cutoff.values[i] <- 0
+    }
+  } 
+}
+print(cutoff.values)
+```
+
+H1 isn't there and apparently was not added at all, so ok.
+
+Now that we have offset values we can rework the plots to observe sectors to which the cells will be split. Specifically, if we consider *lim.A* and *lim.B* the cutoffs fo antibody A and B on axis *x* and *y* respectively:
+
+* **A < lim.A, B < lim.B** are uninteresting, lowly expressed cells, possibly empty droplets. These will be rejected altogether.
+* **A > lim.A, B < lim.B** should be cells of strain marked by antibody A.
+* **A < lim.A, B > lim.B** should be cells of strain marked by antibody B.
+* **A > lim.A, B > lim.B** are probably doublets. They will be extracted separately and may be interesting to study for properties of multiplets, but are not interesting with regards to multiple analysis.
+
+If there are more than two markers, these rules are changed slightly. In that case at most one marker should be expressed significantly for given cell (ie. only single marker should be over limit from *cutoff.values*), henceforth we suppose all cells with more than one marker as doublet. We still visualize them in two-dimensional plane.
+
+```{r plot markers divided, fig.align = "center"}
+marker.combin = combn(strain.markers, 2)
+for(i  in 1:dim(marker.combin)[2]){
+  color.def <- rep('purple', length(antibodies[marker.combin[1,i],]))
+  color.def[antibodies[marker.combin[1,i],] > cutoff.values[strain.markers == marker.combin[1,i]]] <- 'skyblue'
+  color.def[antibodies[marker.combin[2,i],] > cutoff.values[strain.markers == marker.combin[2,i]]] <- 'orange'
+  color.def[(antibodies[marker.combin[1,i],] > cutoff.values[strain.markers == marker.combin[1,i]]) & (antibodies[marker.combin[2,i],] > cutoff.values[strain.markers == marker.combin[2,i]])] <- 'olivedrab'
+  plot(antibodies[marker.combin[1,i],], antibodies[marker.combin[2,i],], main = paste0(marker.combin[1,i], ' vs. ', marker.combin[2,i], ' for experiment ', sep01), xlab = marker.combin[1,i], ylab = marker.combin[2,i], pch = 4, col = color.def, cex = 0.7)
+  abline(v = cutoff.values[strain.markers == marker.combin[1,i]], col='red', lty=2, lwd=2)
+  abline(h = cutoff.values[strain.markers == marker.combin[2,i]], col='red', lty=2, lwd=2)
+  legend('topright', legend = c('Empty droplets', sample.strains[strain.markers == marker.combin[1,i]],  
+         sample.strains[strain.markers == marker.combin[2,i]], 'Doublets'), 
+         col =  c('purple','skyblue','orange','olivedrab'), pch = 4)
+}
+```
+
+## Create and output lists
+
+We can now proceed to creating and outputting lists. These lists are then used to extract reads with given barcodes.
+
+```{r create and extract, fig.align = "center"}
+
+colnames(antibodies) <- gsub('-1','', colnames(antibodies))
+
+# remove doublets
+antibodies.subs <- antibodies[strain.markers,]
+comparison.matrix <- antibodies.subs > cutoff.values
+doublets <- colnames(comparison.matrix)[colSums(comparison.matrix) > 1]
+
+fine.cells <- list()
+
+antibodies.nodb <- antibodies[,!(colnames(antibodies) %in% doublets)]
+remaining.cells <- gsub('-1', '', colnames(antibodies))
+remaining.cells <- remaining.cells[!(remaining.cells %in% doublets)]
+write.table(doublets, paste0(target.path, sep01, "_doublets.csv"), col.names=FALSE, row.names=FALSE)
+for(i in 1:length(strain.markers)){
+  cells.out <- antibodies.nodb[,antibodies.nodb[strain.markers[i],] > cutoff.values[i], drop=F]
+  cells.out <- colnames(cells.out)
+  remaining.cells <- remaining.cells[!(remaining.cells %in% cells.out)]
+  print(paste0('Unique cells for ', strain.markers[i], ': ', length(cells.out)))
+  fine.cells[[strain.markers[i]]] <- cells.out
+  write.table(cells.out, paste0(target.path, sep01, '_', sample.strains[i],'.csv'), col.names=FALSE, row.names=FALSE)
+}
+print(paste('Doublets:', length(doublets)))
+print(paste0('Cells without at least 1 hashtags: ', colnames(antibodies.nodb)[colnames(antibodies.nodb) %nin% unlist(fine.cells)] %>% length))
+```

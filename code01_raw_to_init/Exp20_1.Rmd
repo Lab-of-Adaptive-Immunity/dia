@@ -1,0 +1,198 @@
+---
+title: "Experiment 11 Well 1"
+author: "Juraj Michalik"
+date: "12/3/2021"
+output: rmdformats::material
+---
+
+This document contains the analysis of human blood from scRNAseq - Experiment 11 Well 1. Human Diabetes project.
+
+# Initialization 
+
+Load all necessary packages here.
+
+```{r libs, include=FALSE}
+knitr::opts_chunk$set(include = TRUE, warning = FALSE, message = FALSE, error = TRUE, cache = TRUE)
+#library(Seurat, lib.loc = '/usr/lib64/R/library')
+library(Seurat)
+library(future)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(cowplot)
+library(gridExtra)
+library(dbscan)
+library(scatterpie)
+library(reshape2)
+library(ggrepel)
+library(scds)
+library(SingleCellExperiment)
+
+source('VDJ_utilities.R')
+source('VDJ_Mixcr_import.R')
+
+# negation of %in% 
+`%nin%` = Negate(`%in%`)
+```
+
+Load matrix.
+
+```{r}
+gex <- Read10X('../data/raw/GEX/R20_1_GEX/raw_feature_bc_matrix/')
+vdj <- build.VDJ.table('../data/raw/VDJ_GEX_data/exp20_1_GEX_TRA.csv',
+                       '../data/raw/VDJ_GEX_data/exp20_1_GEX_TRB.csv',
+                       '../data/raw/VDJ/R20_1_VDJ/all_contig_annotations.csv')
+vdj <- correct.mixcr.mismatches(vdj)
+
+# ID of experiment
+experiment.ID <- 'exp20'
+sample.ID <- '1'
+sep01 <- paste(experiment.ID, sample.ID, sep='_')
+
+hashtags <- c()
+hash.list <- list()
+
+for(x in 1:10){
+  hashtags = c(hashtags, paste0('H', x))
+}
+
+print(hash.list)
+
+for(i in 1:length(hashtags)){
+  hash.read <- read.csv(paste0('Hashtags_20_1/', sep01, '_',
+                               hashtags[i], '.csv'), header = F)
+  hash.list[[i]] <- paste(hash.read[,1], '1', sep = '-')
+  
+}
+```
+
+We also need to load meta data.
+
+```{r}
+# also remove all columns with only NA
+meta.data.import <- read.csv('../data/Metadata.csv') %>% filter(Well_CT_ID == 'exp20_1_CD8') %>% select_if(~ !all(is.na(.) | . == '')) %>% 
+  mutate(hashtags = Hashtag, Age = gsub(',','.', Age) %>% as.numeric(.), Patient_ID = Mouse_ID) %>% dplyr::select(-Mouse_ID)
+```
+
+Create Seurat object, then subset on cells fo which we found correct hashtag combination, then add meta data descriptors.
+
+```{r}
+exp20_1 <- CreateSeuratObject(gex$`Gene Expression`, 'exp20_1_CD8', min.cells = 3, min.features = 200)
+```
+
+Now compute MT and RP gene proportion for each cell and remove the genes afterwards along with VDJ genes as well. Then we reconstruct the object and we add antibodies as well.
+
+```{r}
+exp20_1[["percent.mt"]] <- PercentageFeatureSet(object = exp20_1, pattern = "^MT-")
+exp20_1[["percent.rp"]] <- PercentageFeatureSet(object = exp20_1, pattern = "^RP[S|L]")
+
+meta.table <- exp20_1@meta.data
+
+genes.removed <- GetAssayData(exp20_1, assay = 'RNA', slot = 'counts')
+genes.removed <- genes.removed[!grepl('^TR(A|B)(V|D|J)', rownames(genes.removed)),]
+genes.removed <- genes.removed[!grepl('^MT-', rownames(genes.removed)),]
+genes.removed <- genes.removed[!grepl('^RP(L|S)', rownames(genes.removed)),]
+
+exp20_1 <- CreateSeuratObject(genes.removed, 'exp20_1_CD8', min.cells = 3, min.features = 200)
+exp20_1 <- AddMetaData(exp20_1, meta.table)
+ab_frame <- gex$`Antibody Capture`[,colnames(gex$`Antibody Capture`) %in% colnames(exp20_1)]
+exp20_1[['Antibodies']] <-  CreateAssayObject(counts = ab_frame)
+```
+
+Now we add hashtag descriptors and meta data.
+
+```{r}
+# annotate by hashtags
+exp20_1 <- subset(exp20_1, cells = colnames(exp20_1)[colnames(exp20_1) %in% unlist(hash.list)])
+
+exp20_1$hashtags <- ''
+for(i in 1:length(hashtags)){
+  exp20_1$hashtags[colnames(exp20_1) %in% hash.list[[i]]] <- hashtags[i]
+}
+
+exp20_1.meta <- exp20_1@meta.data %>%
+  left_join(meta.data.import, by =  c('hashtags' = 'hashtags'))
+rownames(exp20_1.meta) <- colnames(exp20_1)
+exp20_1@meta.data <- exp20_1.meta
+```
+
+Plot QC elements - notably gene count, read count etc.:
+
+```{r}
+print(VlnPlot(exp20_1, features = c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent.rp"), ncol = 4, pt.size = 0))
+```
+
+We track down VDJ doublets and remove them. For now we won't remove cells with too many counts and hashtag doublets, neither by mitochondrial gene counts.
+
+```{r}
+vdj.doublets <- trace.VDJ.duplicates(exp20_1, vdj)
+exp20_1 <- subset(exp20_1, cells = colnames(exp20_1)[!(colnames(exp20_1) %in% vdj.doublets)])
+exp20_1 <- create.VDJ.metadata(exp20_1, vdj)
+exp20_1$has.VDJ <- ifelse(!is.na(exp20_1$cdr3_A1) | !is.na(exp20_1$cdr3_B), 'VDJ found', 'VDJ not found')
+exp20_1$has.complete.VDJ <- ifelse(!is.na(exp20_1$cdr3_A1) & !is.na(exp20_1$cdr3_B), 'Complete VDJ found', 'Complete VDJ not found')
+```
+
+```{r}
+dir.create('Whitelists/', showWarnings = FALSE)
+write.table(gsub('-1', '', colnames(exp20_1)), 'Whitelists/exp20_1_whitelist.csv', quote = F, row.names = F, col.names = F)
+```
+
+Add PTPRC data.
+
+```{r}
+exp20_1_ptrpc <- readRDS('../data/raw/Ptprc/exp20_1_ptprc.rds')
+exp20_1[['PTPRC']] <- CreateAssayObject(exp20_1_ptrpc)
+```
+
+# First Analysis
+
+Prepare first crude analysis.
+
+```{r}
+exp20_1 <- NormalizeData(object = exp20_1 )
+exp20_1 <- FindVariableFeatures(exp20_1, selection.method = "vst", nfeatures = 1000, 
+                                          verbose = FALSE)
+  
+exp20_1 <- ScaleData(exp20_1, verbose = FALSE)
+exp20_1 <- RunPCA(exp20_1, npcs = 20, verbose = FALSE)
+exp20_1 <- RunUMAP(exp20_1, reduction = "pca", dims = 1:20)
+  
+exp20_1 <- FindNeighbors(exp20_1, dims = 1:20)
+exp20_1 <- FindClusters(exp20_1, resolution = 0.5)
+```
+
+Print results.
+
+```{r,  results = F, message=FALSE, fig.width = 8}
+DimPlot(exp20_1, label = T) + ggtitle('Exp. 20 W1 (CD8+) - HS diabetes project CD8 T cells')
+VlnPlot(exp20_1, features = c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent.rp"), ncol = 4, pt.size = 0)
+```
+
+Print distribution by disease.
+
+```{r,  results = F, message=FALSE, fig.width = 8}
+DimPlot(exp20_1, group.by = 'Condition') + ggtitle('Exp. 20 W1 (CD8+) - HS diabetes project CD8 T cells - Condition')
+DimPlot(exp20_1, group.by = 'Patient_ID') + ggtitle('Exp. 20 W1 (CD8+) - HS diabetes project CD8 T cells - Sample')
+```
+
+Prepare initial clones.
+
+```{r}
+exp20_1 <- create.clones(exp20_1)
+```
+
+Normalize antibody counts.
+
+```{r}
+exp20_1 <- NormalizeData(exp20_1, normalization.method = "CLR", margin = 2, assay = "Antibodies")
+```
+
+Save initial data set.
+
+```{r,  results = F, message=FALSE}
+saveRDS(exp20_1, '../data/init/exp20_1_init_with_Mixcr.rds')
+```
+
+```{r}
+exp20_1@meta.data[c('Patient_ID', 'Condition')] %>% table
+```
