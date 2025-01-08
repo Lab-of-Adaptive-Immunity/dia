@@ -48,7 +48,7 @@ The analysis contains 23 parts, the scripts for which are contained within `code
 * 22_BTN3A2_expression.ipynb
 * 23_Treg_Validaton.ipynb
 
-Each file guides you through the analysis as it was performed. Please note that only some of the results presented in these notebooks were included in the manuscript. Additionally, the folder `code01_raw_to_init` contains codes to generate initial data sets (in `init` subfolder of `data` folder) from raw data. Since `init` data are included on Zenodo site you do not have to (and it is impossible without raw data) to do so run these scripts; they are provided for purely informative purpose on general pre-processing strategy.
+Each file guides you through the analysis as it was performed. Please note that only some of the results presented in these notebooks were included in the manuscript. Additionally, the folder `code01_raw_to_init` contains codes to generate initial data sets (in `init` subfolder of `data` folder) from raw data. Since `init` data are included on Zenodo site you do not have to (and it is impossible without raw data) run these scripts; they are provided for purely informative purpose on general pre-processing strategy.
 
 ## Data availability
 Processed data required to generate figures for the manuscript are available on Zenodo: 
